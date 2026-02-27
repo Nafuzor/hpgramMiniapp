@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>HupGram Core</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/feather-icons"></script>
+    <style>
+        :root {
+            --font: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+            --bg-1: #e0e5ec; --bg-2: #f5f7fa; --bg-3: #c8d0d8;
+            --glass-bg: rgba(255, 255, 255, 0.65);
+            --glass-border: rgba(255, 255, 255, 0.5);
+            --text: #1d1d1f; --text-muted: #86868b;
+            --accent: #007aff; --success: #34c759;
+            --radius: 24px;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-1: #1c1c1e; --bg-2: #2c2c2e; --bg-3: #000000;
+                --glass-bg: rgba(40, 40, 40, 0.65);
+                --glass-border: rgba(255, 255, 255, 0.1);
+                --text: #f5f5f7; --text-muted: #98989d;
+            }
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        
+        body {
+            font-family: var(--font); color: var(--text);
+            background: linear-gradient(-45deg, var(--bg-1), var(--bg-2), var(--bg-3));
+            background-size: 400% 400%; animation: liquid 15s ease infinite;
+            min-height: 100vh; overflow-x: hidden; padding-bottom: 100px;
+        }
+        @keyframes liquid { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+
+        /* --- LOGIN SCREEN --- */
+        #login-view {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 999; backdrop-filter: blur(15px);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            padding: 20px;
+        }
+        
+        /* --- MAIN LAYOUT --- */
+        .view { display: none; padding: 20px; max-width: 600px; margin: 0 auto; animation: fadeIn 0.4s ease; }
+        .view.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* --- CARDS --- */
+        .glass-card {
+            background: var(--glass-bg); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border); border-radius: var(--radius);
+            padding: 20px; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+        }
+        
+        .title { font-size: 13px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin: 0 0 10px 15px; }
+
+        /* --- INPUTS & BUTTONS --- */
+        input {
+            width: 100%; padding: 16px; border-radius: 16px; border: none;
+            background: rgba(128,128,128,0.1); color: var(--text);
+            font-size: 16px; text-align: center; margin-bottom: 10px; outline: none;
+        }
+        .btn-primary {
+            width: 100%; padding: 16px; border-radius: 16px; border: none;
+            background: var(--accent); color: white; font-weight: 600; font-size: 16px;
+            cursor: pointer; box-shadow: 0 5px 15px rgba(0,122,255,0.3); transition: 0.2s;
+        }
+        .btn-primary:active { transform: scale(0.98); }
+
+        /* --- TOGGLE SWITCH --- */
+        .mod-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 15px 0; border-bottom: 1px solid rgba(128,128,128,0.1);
+        }
+        .mod-item:last-child { border-bottom: none; }
+        
+        .mod-info { display: flex; align-items: center; gap: 12px; cursor: pointer; flex: 1; }
+        .mod-icon { 
+            width: 36px; height: 36px; border-radius: 10px; 
+            background: rgba(0,122,255,0.15); color: var(--accent);
+            display: flex; align-items: center; justify-content: center; 
+        }
+
+        .toggle { position: relative; width: 50px; height: 30px; }
+        .toggle input { opacity: 0; width: 0; height: 0; }
+        .slider {
+            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(128,128,128,0.2); transition: .3s; border-radius: 30px;
+        }
+        .slider:before {
+            position: absolute; content: ""; height: 26px; width: 26px; left: 2px; bottom: 2px;
+            background-color: white; transition: .3s; border-radius: 50%; box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        input:checked + .slider { background-color: var(--success-color); }
+        input:checked + .slider:before { transform: translateX(20px); }
+
+        /* --- CHART CONTROLS --- */
+        .chart-tabs { display: flex; background: rgba(128,128,128,0.1); padding: 4px; border-radius: 12px; margin-bottom: 15px; }
+        .c-tab { flex: 1; text-align: center; padding: 8px; font-size: 13px; color: var(--text-muted); border-radius: 8px; cursor: pointer; font-weight: 500; }
+        .c-tab.active { background: var(--glass-bg); color: var(--text); shadow: 0 2px 5px rgba(0,0,0,0.05); }
+
+        /* --- CONSOLE --- */
+        .console-out {
+            font-family: 'SF Mono', monospace; font-size: 12px; color: var(--text);
+            height: 250px; overflow-y: auto; margin-bottom: 15px;
+            border: 1px solid rgba(128,128,128,0.1); border-radius: 12px; padding: 10px;
+        }
+        .console-row { display: flex; gap: 10px; }
+
+        /* --- NAVBAR --- */
+        .navbar {
+            position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+            width: 90%; max-width: 350px; height: 65px;
+            background: var(--glass-bg); backdrop-filter: blur(20px);
+            border-radius: 35px; border: 1px solid var(--glass-border);
+            display: flex; justify-content: space-around; align-items: center;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1); z-index: 100;
+        }
+        .nav-item { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 10px; color: var(--text-muted); cursor: pointer; transition: 0.3s; width: 60px; }
+        .nav-item i { width: 22px; height: 22px; }
+        .nav-item.active { color: var(--accent); transform: translateY(-2px); }
+
+        /* --- MODAL --- */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.4); z-index: 200; display: none;
+            backdrop-filter: blur(5px); align-items: center; justify-content: center;
+        }
+        .modal {
+            background: var(--bg-2); padding: 25px; border-radius: 24px;
+            width: 85%; max-width: 320px; text-align: center;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.2); animation: popUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        @keyframes popUp { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+    </style>
+</head>
+<body>
+
+    <!-- 1. LOGIN SCREEN -->
+    <div id="login-view">
+        <div class="glass-card" style="width: 100%; max-width: 320px; text-align: center;">
+            <div style="font-size: 40px; margin-bottom: 10px;">💠</div>
+            <h2 style="margin-bottom: 5px;">HupGram Core</h2>
+            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 25px;">Web Interface v3.0</p>
+            
+            <input type="text" id="lg-id" disabled>
+            <input type="password" id="lg-pass" placeholder="Пароль доступа">
+            <button class="btn-primary" onclick="login()">Войти</button>
+            <p id="lg-err" style="color: #ff3b30; font-size: 12px; margin-top: 10px; display: none;">Неверный пароль</p>
+        </div>
+    </div>
+
+    <!-- 2. MAIN APP -->
+    <div id="main-app" style="display: none;">
+        
+        <!-- TAB: DASHBOARD -->
+        <div id="tab-dash" class="view active">
+            <div class="glass-card" style="display: flex; align-items: center; gap: 15px;">
+                <div style="width: 50px; height: 50px; background: var(--accent); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 20px;" id="u-ava">U</div>
+                <div>
+                    <h2 style="font-size: 18px;" id="u-name">User</h2>
+                    <p style="font-size: 13px; color: var(--text-muted);">ID: <span id="u-id">...</span></p>
+                </div>
+            </div>
+
+            <div class="title">Статистика</div>
+            <div class="glass-card">
+                <div class="chart-tabs">
+                    <div class="c-tab active" onclick="setChart(7, this)">7 Дней</div>
+                    <div class="c-tab" onclick="setChart(30, this)">30 Дней</div>
+                </div>
+                <div style="height: 200px;">
+                    <canvas id="statChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB: MODULES -->
+        <div id="tab-mods" class="view">
+            <div class="title">Управление защитой</div>
+            <div class="glass-card" id="modules-list"></div>
+        </div>
+
+        <!-- TAB: CONSOLE -->
+        <div id="tab-term" class="view">
+            <div class="title">Терминал</div>
+            <div class="glass-card">
+                <div class="console-out" id="term-log">
+                    <div>[System] HupGram Web connected.</div>
+                    <div>[System] Waiting for command...</div>
+                    <br>
+                    <div>Type <b>.id</b> to generate Auth Key.</div>
+                </div>
+                <div class="console-row">
+                    <input type="text" id="term-in" style="margin: 0; text-align: left; font-family: monospace;" placeholder="...">
+                    <button class="btn-primary" style="width: auto; padding: 0 20px;" onclick="runCmd()">Run</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- NAVBAR -->
+    <div class="navbar" id="navbar" style="display: none;">
+        <div class="nav-item active" onclick="go('dash', this)"><i data-feather="grid"></i><span>Сводка</span></div>
+        <div class="nav-item" onclick="go('mods', this)"><i data-feather="layers"></i><span>Модули</span></div>
+        <div class="nav-item" onclick="go('term', this)"><i data-feather="terminal"></i><span>Консоль</span></div>
+    </div>
+
+    <!-- MODAL INFO -->
+    <div class="modal-overlay" id="modal" onclick="if(event.target===this) this.style.display='none'">
+        <div class="modal">
+            <div style="font-size: 40px; margin-bottom: 10px;" id="m-icon">📦</div>
+            <h3 id="m-title">Модуль</h3>
+            <p id="m-desc" style="color: var(--text-muted); font-size: 14px; margin: 10px 0;">...</p>
+            <div style="background: rgba(128,128,128,0.1); padding: 8px; border-radius: 8px; font-family: monospace; font-size: 12px; margin-bottom: 20px;" id="m-cmd"></div>
+            <button class="btn-primary" onclick="document.getElementById('modal').style.display='none'">Закрыть</button>
+        </div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand(); feather.replace();
+
+        // 1. INIT DATA
+        const user = tg.initDataUnsafe.user || { id: 12345678, first_name: "Guest" };
+        document.getElementById('lg-id').value = user.id;
+        document.getElementById('u-name').innerText = user.first_name;
+        document.getElementById('u-id').innerText = user.id;
+        document.getElementById('u-ava').innerText = user.first_name[0];
+
+        // 2. DATA
+        const modules = [
+            { id: 'av', name: 'Антивирус', icon: 'shield', desc: 'Сканирует файлы на вирусы перед скачиванием.', cmd: '.scan [reply]', active: true },
+            { id: 'sp', name: 'Спаммер', icon: 'zap', desc: 'Массовая отправка сообщений и рейд.', cmd: '.spam <n> <text>', active: false },
+            { id: 'gh', name: 'Невидимка', icon: 'eye-off', desc: 'Скрывает статус "печатает" и читает сообщения скрыто.', cmd: '.ghost', active: true },
+            { id: 'ak', name: 'AFK Режим', icon: 'moon', desc: 'Автоответчик, когда вы заняты.', cmd: '.afk <text>', active: true },
+            { id: 'ai', name: 'AI Assistant', icon: 'cpu', desc: 'Нейросеть для ответов в диалогах.', cmd: '.ai <text>', active: true }
+        ];
+
+        // 3. AUTH LOGIC
+        function login() {
+            const pass = document.getElementById('lg-pass').value;
+            // Временный пароль для теста (потом сделаем проверку через бота)
+            if(pass.length > 0) { 
+                document.getElementById('login-view').style.display = 'none';
+                document.getElementById('main-app').style.display = 'block';
+                document.getElementById('navbar').style.display = 'flex';
+                tg.HapticFeedback.notificationOccurred('success');
+            } else {
+                document.getElementById('lg-err').style.display = 'block';
+                tg.HapticFeedback.notificationOccurred('error');
+            }
+        }
+
+        // 4. MODULES RENDER
+        const mList = document.getElementById('modules-list');
+        modules.forEach(m => {
+            mList.innerHTML += `
+                <div class="mod-item">
+                    <div class="mod-info" onclick="showInfo('${m.id}')">
+                        <div class="mod-icon"><i data-feather="${m.icon}"></i></div>
+                        <b>${m.name}</b>
+                    </div>
+                    <label class="toggle">
+                        <input type="checkbox" ${m.active ? 'checked' : ''} onchange="toggle('${m.id}')">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            `;
+        });
+        feather.replace();
+
+        function showInfo(id) {
+            const m = modules.find(x => x.id === id);
+            document.getElementById('m-title').innerText = m.name;
+            document.getElementById('m-desc').innerText = m.desc;
+            document.getElementById('m-cmd').innerText = m.cmd;
+            document.getElementById('modal').style.display = 'flex';
+            tg.HapticFeedback.selectionChanged();
+        }
+
+        function toggle(id) {
+            tg.HapticFeedback.impactOccurred('medium');
+            // Тут будет отправка данных боту
+        }
+
+        // 5. CHART LOGIC
+        const ctx = document.getElementById('statChart').getContext('2d');
+        const isDark = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        let chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'],
+                datasets: [{
+                    data: [15, 30, 25, 45, 40, 60, 55],
+                    borderColor: '#007aff', borderWidth: 3,
+                    backgroundColor: isDark ? 'rgba(0,122,255,0.2)' : 'rgba(0,122,255,0.1)',
+                    fill: true, tension: 0.4, pointRadius: 0
+                }]
+            },
+            options: {
+                plugins: { legend: {display: false} },
+                scales: { x: {display: false}, y: {display: false} },
+                maintainAspectRatio: false
+            }
+        });
+
+        function setChart(days, el) {
+            document.querySelectorAll('.c-tab').forEach(e => e.classList.remove('active'));
+            el.classList.add('active');
+            
+            const count = days === 7 ? 7 : 30;
+            const labels = days === 7 
+                ? ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'] 
+                : Array.from({length: 30}, (_, i) => i + 1);
+            
+            // Генерация красивой волны
+            const data = Array.from({length: count}, () => Math.floor(Math.random() * 50) + 20);
+            
+            chart.data.labels = labels;
+            chart.data.datasets[0].data = data;
+            chart.update();
+            tg.HapticFeedback.selectionChanged();
+        }
+
+        // 6. CONSOLE LOGIC
+        function runCmd() {
+            const inp = document.getElementById('term-in');
+            const log = document.getElementById('term-log');
+            const cmd = inp.value.trim();
+            if(!cmd) return;
+
+            log.innerHTML += `<div><span style="color:var(--accent)">></span> ${cmd}</div>`;
+            
+            if(cmd === '.id') {
+                const key = `HG-${user.id}-${Math.floor(Math.random()*10000)}`;
+                log.innerHTML += `<div style="color:var(--success)">KEY: ${key}</div>`;
+                log.innerHTML += `<div style="opacity:0.6; font-size:10px">Copy and send to bot.</div>`;
+                tg.sendData(JSON.stringify({type: 'key', value: key}));
+            }
+
+            inp.value = '';
+            log.scrollTop = log.scrollHeight;
+        }
+
+        // 7. NAVIGATION
+        function go(id, el) {
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.getElementById('tab-' + id).classList.add('active');
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            el.classList.add('active');
+            tg.HapticFeedback.impactOccurred('light');
+        }
+
+    </script>
+</body>
+</html>
